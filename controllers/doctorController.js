@@ -30,11 +30,31 @@ const getQueueStatus = async (req, res) => {
             return res.status(404).json({ success: false, message: 'Clinic details not found' });
         }
 
-        // Count total booked patients (active, served, completed)
-        const totalBooked = await Booking.countDocuments({
+        // Count pending bookings (in queue)
+        const inQueue = await Booking.countDocuments({
             clinic: clinic._id,
-            status: { $ne: 'cancelled' },
+            status: 'pending',
         });
+
+        // Count completed bookings (served)
+        const served = await Booking.countDocuments({
+            clinic: clinic._id,
+            status: 'completed',
+        });
+
+        // Find currently called patient
+        const currentBooking = await Booking.findOne({
+            clinic: clinic._id,
+            status: 'called',
+        }).populate('patient', 'name phone');
+
+        // Fetch upcoming patient list (pending bookings)
+        const upcoming = await Booking.find({
+            clinic: clinic._id,
+            status: 'pending',
+        })
+        .sort({ slotNumber: 1 })
+        .populate('patient', 'name phone');
 
         res.status(200).json({
             success: true,
@@ -42,9 +62,16 @@ const getQueueStatus = async (req, res) => {
             specialty: clinic.specialty,
             clinicName: clinic.clinic,
             nowServing: clinic.currentServing,
-            totalBooked: totalBooked,
+            nowServingName: currentBooking?.patient?.name || null,
+            nowServingPhone: currentBooking?.patient?.phone || null,
+            nowServingPredicted: currentBooking?.predictedServingTime || '',
+            inQueue: inQueue,
+            served: served,
             avgConsult: clinic.averageConsultTime,
+            scheduledStart: clinic.scheduledStart,
+            actualStart: clinic.actualStart,
             isOpen: clinic.isOpen,
+            upcoming: upcoming,
         });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -114,7 +141,40 @@ const callNextPatient = async (req, res) => {
     }
 };
 
+// @desc    Cancel a booking
+// @route   POST /api/doctor/cancel-booking/:id
+// @access  Private (Doctor only)
+const cancelBooking = async (req, res) => {
+    try {
+        const booking = await Booking.findById(req.params.id);
+        if (!booking) {
+            return res.status(404).json({ success: false, message: 'Booking not found' });
+        }
+        
+        booking.status = 'cancelled';
+        booking.isLive = false;
+        await booking.save();
+
+        // Recalculate clinic metrics
+        const clinic = await Clinic.findById(booking.clinic);
+        if (clinic) {
+            const pendingCount = await Booking.countDocuments({
+                clinic: clinic._id,
+                status: 'pending',
+            });
+            clinic.inQueue = pendingCount;
+            clinic.eta = Math.max(1, Math.round(pendingCount * clinic.averageConsultTime));
+            await clinic.save();
+        }
+
+        res.status(200).json({ success: true, message: 'Booking cancelled successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     getQueueStatus,
     callNextPatient,
+    cancelBooking,
 };
