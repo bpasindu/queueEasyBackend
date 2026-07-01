@@ -56,13 +56,13 @@ app.use((err, req, res, next) => {
 // Seeding function
 async function seedDatabase() {
     try {
-        console.log('Clearing existing database collections...');
-        await User.deleteMany({});
-        await Clinic.deleteMany({});
-        await Booking.deleteMany({});
-        console.log('Collections cleared successfully!');
+        const userCount = await User.countDocuments();
+        if (userCount > 0) {
+            console.log('Database already has users. Skipping database seeding to preserve existing data.');
+            return;
+        }
 
-        console.log('Seeding database with default users...');
+        console.log('Database is empty. Seeding database with default users...');
         const patient = await User.create({
             name: 'Nimal Perera',
             email: 'patient@queueease.lk',
@@ -72,7 +72,31 @@ async function seedDatabase() {
             visits: 18
         });
 
-        const doctor = await User.create({
+        const doctorSilva = await User.create({
+            name: 'Dr. Silva',
+            email: 'silva@queueease.lk',
+            phone: '+94771112222',
+            password: 'password123',
+            role: 'doctor'
+        });
+
+        const doctorFernando = await User.create({
+            name: 'Dr. Fernando',
+            email: 'fernando@queueease.lk',
+            phone: '+94773334444',
+            password: 'password123',
+            role: 'doctor'
+        });
+
+        const doctorJayasinghe = await User.create({
+            name: 'Dr. Jayasinghe',
+            email: 'jayasinghe@queueease.lk',
+            phone: '+94775556666',
+            password: 'password123',
+            role: 'doctor'
+        });
+
+        const doctorJenkins = await User.create({
             name: 'Dr. Sarah Jenkins',
             email: 'doctor@queueease.lk',
             phone: '+94777654321',
@@ -92,10 +116,11 @@ async function seedDatabase() {
             inQueue: 5,
             eta: 18,
             scheduledStart: '9:00 AM',
-            actualStart: '9:18 AM',
-            isOpen: true,
+            actualStart: '--:--',
+            isOpen: false,
             averageConsultTime: 6.4,
-            currentServing: 3
+            currentServing: 1,
+            doctorUser: doctorSilva._id
         });
 
         // Dr. Fernando
@@ -106,10 +131,11 @@ async function seedDatabase() {
             inQueue: 12,
             eta: 32,
             scheduledStart: '9:00 AM',
-            actualStart: '9:18 AM',
-            isOpen: true,
+            actualStart: '--:--',
+            isOpen: false,
             averageConsultTime: 6.4,
-            currentServing: 4
+            currentServing: 1,
+            doctorUser: doctorFernando._id
         });
 
         // Dr. Jayasinghe
@@ -120,10 +146,11 @@ async function seedDatabase() {
             inQueue: 3,
             eta: 12,
             scheduledStart: '9:00 AM',
-            actualStart: '9:18 AM',
-            isOpen: true,
+            actualStart: '--:--',
+            isOpen: false,
             averageConsultTime: 6.4,
-            currentServing: 4
+            currentServing: 1,
+            doctorUser: doctorJayasinghe._id
         });
 
         // Dr. Sarah Jenkins (Cardiologist)
@@ -134,11 +161,11 @@ async function seedDatabase() {
             inQueue: 18,
             eta: 130,
             scheduledStart: '9:00 AM',
-            actualStart: '9:18 AM',
-            isOpen: true,
+            actualStart: '--:--',
+            isOpen: false,
             averageConsultTime: 7.2,
-            currentServing: 4,
-            doctorUser: doctor._id
+            currentServing: 1,
+            doctorUser: doctorJenkins._id
         });
 
         console.log('Clinics seeded successfully!');

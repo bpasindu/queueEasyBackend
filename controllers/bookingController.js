@@ -127,9 +127,10 @@ const getSlotsForClinic = async (req, res) => {
             }
         });
 
-        // Generate 14 slots
+        // Generate dynamic slots based on maxPatients
         const slots = [];
-        for (let i = 1; i <= 14; i++) {
+        const maxSlots = clinic.maxPatients || 14;
+        for (let i = 1; i <= maxSlots; i++) {
             const isTaken = !!takenSlotsMap[i] || i < currentServingNum; // slots below current serving are taken
             const time = getSlotTimeStr(i, clinic.averageConsultTime, clinic.actualStart);
             const wait = getWaitMinutes(i, currentServingNum, clinic.averageConsultTime);

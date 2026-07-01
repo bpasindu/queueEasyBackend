@@ -20,14 +20,16 @@ const getQueueStatus = async (req, res) => {
     try {
         // Find clinic for this doctor
         let clinic = await Clinic.findOne({ doctorUser: req.user.id });
-
-        // If no clinic is mapped specifically, default to first clinic for testing
         if (!clinic) {
-            clinic = await Clinic.findOne();
-        }
-
-        if (!clinic) {
-            return res.status(404).json({ success: false, message: 'Clinic details not found' });
+            clinic = await Clinic.create({
+                doctor: req.user.name || 'Doctor',
+                specialty: 'General Practitioner',
+                clinic: 'Consultation Suite Room 1',
+                scheduledStart: '9:00 AM',
+                actualStart: '--:--',
+                isOpen: false,
+                doctorUser: req.user.id
+            });
         }
 
         // Count pending bookings (in queue)
@@ -84,13 +86,16 @@ const getQueueStatus = async (req, res) => {
 const callNextPatient = async (req, res) => {
     try {
         let clinic = await Clinic.findOne({ doctorUser: req.user.id });
-
         if (!clinic) {
-            clinic = await Clinic.findOne();
-        }
-
-        if (!clinic) {
-            return res.status(404).json({ success: false, message: 'Clinic details not found' });
+            clinic = await Clinic.create({
+                doctor: req.user.name || 'Doctor',
+                specialty: 'General Practitioner',
+                clinic: 'Consultation Suite Room 1',
+                scheduledStart: '9:00 AM',
+                actualStart: '--:--',
+                isOpen: false,
+                doctorUser: req.user.id
+            });
         }
 
         // 1. If there's an active called booking for the old serving number, complete it
@@ -173,8 +178,132 @@ const cancelBooking = async (req, res) => {
     }
 };
 
+// @desc    Start clinic session (places the session, opens for booking)
+// @route   POST /api/doctor/start-session
+// @access  Private (Doctor only)
+const startSession = async (req, res) => {
+    try {
+        const { maxPatients } = req.body;
+        
+        let clinic = await Clinic.findOne({ doctorUser: req.user.id });
+        if (!clinic) {
+            clinic = await Clinic.create({
+                doctor: req.user.name || 'Doctor',
+                specialty: 'General Practitioner',
+                clinic: 'Consultation Suite Room 1',
+                scheduledStart: '9:00 AM',
+                actualStart: '--:--',
+                isOpen: false,
+                doctorUser: req.user.id
+            });
+        }
+
+        clinic.actualStart = '--:--'; // Initial setup before real-time activation
+        clinic.maxPatients = parseInt(maxPatients) || 14;
+        clinic.isOpen = true;
+        clinic.currentServing = 1;
+        clinic.inQueue = 0; // Reset queue size to 0
+        clinic.eta = 0; // Reset estimated wait time to 0
+        await clinic.save();
+
+        // Remove any previous active/historical bookings for this clinic so it starts clean
+        await Booking.deleteMany({ clinic: clinic._id });
+
+        res.status(200).json({ 
+            success: true, 
+            message: 'Clinic session set up successfully. Open for bookings.',
+            clinic 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    Start calling in real-time (doctor starts the session now)
+// @route   POST /api/doctor/activate-real-time
+// @access  Private (Doctor only)
+const activateRealTimeSession = async (req, res) => {
+    try {
+        let clinic = await Clinic.findOne({ doctorUser: req.user.id });
+        if (!clinic) {
+            clinic = await Clinic.create({
+                doctor: req.user.name || 'Doctor',
+                specialty: 'General Practitioner',
+                clinic: 'Consultation Suite Room 1',
+                scheduledStart: '9:00 AM',
+                actualStart: '--:--',
+                isOpen: false,
+                doctorUser: req.user.id
+            });
+        }
+
+        // Get the current local time in Colombo
+        const currentLocalTime = new Date().toLocaleTimeString('en-US', {
+            timeZone: 'Asia/Colombo',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+        });
+
+        clinic.actualStart = currentLocalTime;
+        await clinic.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Real-time session started successfully',
+            actualStart: clinic.actualStart,
+            clinic
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// @desc    End clinic session
+// @route   POST /api/doctor/end-session
+// @access  Private (Doctor only)
+const endSession = async (req, res) => {
+    try {
+        let clinic = await Clinic.findOne({ doctorUser: req.user.id });
+        if (!clinic) {
+            clinic = await Clinic.create({
+                doctor: req.user.name || 'Doctor',
+                specialty: 'General Practitioner',
+                clinic: 'Consultation Suite Room 1',
+                scheduledStart: '9:00 AM',
+                actualStart: '--:--',
+                isOpen: false,
+                doctorUser: req.user.id
+            });
+        }
+
+        clinic.isOpen = false;
+        clinic.actualStart = '--:--';
+        clinic.inQueue = 0;
+        clinic.eta = 0;
+        await clinic.save();
+
+        // Mark all active bookings for this clinic as completed so queue resets cleanly
+        await Booking.updateMany(
+            { clinic: clinic._id, status: { $in: ['pending', 'called'] } },
+            { status: 'completed', isLive: false }
+        );
+
+        res.status(200).json({ 
+            success: true, 
+            message: 'Clinic session ended successfully',
+            clinic 
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     getQueueStatus,
     callNextPatient,
     cancelBooking,
+    startSession,
+    activateRealTimeSession,
+    endSession,
 };

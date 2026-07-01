@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Clinic = require('../models/Clinic');
 
 // Helper to generate JWT
 const generateToken = (id) => {
@@ -34,6 +35,19 @@ const registerUser = async (req, res) => {
             password,
             role: role || 'patient',
         });
+
+        // If registered user is a doctor, automatically initialize their clinic profile
+        if (user.role === 'doctor') {
+            await Clinic.create({
+                doctor: user.name,
+                specialty: 'General Practitioner',
+                clinic: 'Consultation Suite Room 1',
+                scheduledStart: '9:00 AM',
+                actualStart: '--:--',
+                isOpen: false,
+                doctorUser: user._id
+            });
+        }
 
         if (user) {
             res.status(201).json({

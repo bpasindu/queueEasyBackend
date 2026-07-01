@@ -41,6 +41,10 @@ const ClinicSchema = new mongoose.Schema({
         type: Number,
         default: 6.4, // in minutes
     },
+    maxPatients: {
+        type: Number,
+        default: 14,
+    },
     doctorUser: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
