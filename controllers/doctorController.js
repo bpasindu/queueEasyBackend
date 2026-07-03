@@ -3,14 +3,12 @@ const Booking = require('../models/Booking');
 
 // Helper to get formatted current time, e.g. "9:18 AM"
 const getCurrentTimeString = () => {
-    const date = new Date();
-    let hours = date.getHours();
-    const minutes = date.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12; // the hour '0' should be '12'
-    const minutesStr = minutes < 10 ? '0' + minutes : minutes;
-    return `${hours}:${minutesStr} ${ampm}`;
+    return new Date().toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Colombo',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
 };
 
 // @desc    Get current doctor queue status
@@ -183,7 +181,7 @@ const cancelBooking = async (req, res) => {
 // @access  Private (Doctor only)
 const startSession = async (req, res) => {
     try {
-        const { maxPatients } = req.body;
+        const { maxPatients, scheduledStart } = req.body;
         
         let clinic = await Clinic.findOne({ doctorUser: req.user.id });
         if (!clinic) {
@@ -191,13 +189,14 @@ const startSession = async (req, res) => {
                 doctor: req.user.name || 'Doctor',
                 specialty: 'General Practitioner',
                 clinic: 'Consultation Suite Room 1',
-                scheduledStart: '9:00 AM',
+                scheduledStart: scheduledStart || '9:00 AM',
                 actualStart: '--:--',
                 isOpen: false,
                 doctorUser: req.user.id
             });
         }
 
+        clinic.scheduledStart = scheduledStart || '9:00 AM';
         clinic.actualStart = '--:--'; // Initial setup before real-time activation
         clinic.maxPatients = parseInt(maxPatients) || 14;
         clinic.isOpen = true;
@@ -237,15 +236,7 @@ const activateRealTimeSession = async (req, res) => {
             });
         }
 
-        // Get the current local time in Colombo
-        const currentLocalTime = new Date().toLocaleTimeString('en-US', {
-            timeZone: 'Asia/Colombo',
-            hour: 'numeric',
-            minute: '2-digit',
-            hour12: true
-        });
-
-        clinic.actualStart = currentLocalTime;
+        clinic.actualStart = getCurrentTimeString();
         await clinic.save();
 
         res.status(200).json({
