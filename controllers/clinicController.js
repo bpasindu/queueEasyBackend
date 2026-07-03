@@ -5,7 +5,7 @@ const Clinic = require('../models/Clinic');
 // @access  Public
 const getClinics = async (req, res) => {
     try {
-        const clinics = await Clinic.find();
+        const clinics = await Clinic.find({ isOpen: true });
         res.status(200).json({
             success: true,
             count: clinics.length,

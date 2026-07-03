@@ -78,9 +78,11 @@ const getActiveBooking = async (req, res) => {
             }
         }
 
-        // Recalculate wait minutes based on actual serving number
         const wait = getWaitMinutes(booking.slotNumber, currentServingNum, booking.clinic.averageConsultTime);
-        const predicted = getSlotTimeStr(booking.slotNumber, booking.clinic.averageConsultTime, booking.clinic.actualStart);
+        const startTimeStr = (booking.clinic.actualStart && booking.clinic.actualStart !== '--:--') 
+            ? booking.clinic.actualStart 
+            : (booking.clinic.scheduledStart || '9:00 AM');
+        const predicted = getSlotTimeStr(booking.slotNumber, booking.clinic.averageConsultTime, startTimeStr);
 
         res.status(200).json({
             success: true,
@@ -127,11 +129,15 @@ const getSlotsForClinic = async (req, res) => {
             }
         });
 
-        // Generate 14 slots
+        // Generate dynamic slots based on maxPatients
         const slots = [];
-        for (let i = 1; i <= 14; i++) {
+        const maxSlots = clinic.maxPatients || 14;
+        const startTimeStr = (clinic.actualStart && clinic.actualStart !== '--:--')
+            ? clinic.actualStart
+            : (clinic.scheduledStart || '9:00 AM');
+        for (let i = 1; i <= maxSlots; i++) {
             const isTaken = !!takenSlotsMap[i] || i < currentServingNum; // slots below current serving are taken
-            const time = getSlotTimeStr(i, clinic.averageConsultTime, clinic.actualStart);
+            const time = getSlotTimeStr(i, clinic.averageConsultTime, startTimeStr);
             const wait = getWaitMinutes(i, currentServingNum, clinic.averageConsultTime);
 
             slots.push({
@@ -148,6 +154,7 @@ const getSlotsForClinic = async (req, res) => {
                 id: clinic._id,
                 doctor: clinic.doctor,
                 currentServing: currentServingNum,
+                scheduledStart: clinic.scheduledStart,
                 actualStart: clinic.actualStart,
                 averageConsultTime: clinic.averageConsultTime,
             },
@@ -200,7 +207,10 @@ const reserveSlot = async (req, res) => {
         const currentServingNum = lastCalled ? lastCalled.slotNumber : 1;
 
         const wait = getWaitMinutes(slotNumber, currentServingNum, clinic.averageConsultTime);
-        const predicted = getSlotTimeStr(slotNumber, clinic.averageConsultTime, clinic.actualStart);
+        const startTimeStr = (clinic.actualStart && clinic.actualStart !== '--:--')
+            ? clinic.actualStart
+            : (clinic.scheduledStart || '9:00 AM');
+        const predicted = getSlotTimeStr(slotNumber, clinic.averageConsultTime, startTimeStr);
 
         // Create booking
         const booking = await Booking.create({
