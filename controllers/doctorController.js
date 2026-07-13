@@ -1,6 +1,7 @@
 const Clinic = require('../models/Clinic');
 const Booking = require('../models/Booking');
 const SessionHistory = require('../models/SessionHistory');
+const User = require('../models/User');
 
 // Helper to get formatted current time, e.g. "9:18 AM"
 const getCurrentTimeString = () => {
@@ -312,6 +313,56 @@ const endSession = async (req, res) => {
     }
 };
 
+// @desc    Update doctor/clinic details
+// @route   PUT /api/doctor/update-details
+// @access  Private (Doctor only)
+const updateDoctorDetails = async (req, res) => {
+    try {
+        const { doctor, specialty, clinicName } = req.body;
+
+        if (!doctor || !specialty || !clinicName) {
+            return res.status(400).json({ success: false, message: 'Please provide all details (doctor, specialty, clinicName)' });
+        }
+
+        let clinic = await Clinic.findOne({ doctorUser: req.user.id });
+        if (!clinic) {
+            clinic = await Clinic.create({
+                doctor,
+                specialty,
+                clinic: clinicName,
+                scheduledStart: '9:00 AM',
+                actualStart: '--:--',
+                isOpen: false,
+                doctorUser: req.user.id
+            });
+        } else {
+            clinic.doctor = doctor;
+            clinic.specialty = specialty;
+            clinic.clinic = clinicName;
+            await clinic.save();
+        }
+
+        // Update the User model name as well to stay in sync
+        const user = await User.findById(req.user.id);
+        if (user) {
+            user.name = doctor;
+            await user.save();
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Doctor details updated successfully',
+            data: {
+                doctor: clinic.doctor,
+                specialty: clinic.specialty,
+                clinicName: clinic.clinic,
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     getQueueStatus,
     callNextPatient,
@@ -319,4 +370,5 @@ module.exports = {
     startSession,
     activateRealTimeSession,
     endSession,
+    updateDoctorDetails,
 };

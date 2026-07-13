@@ -33,6 +33,30 @@ const UserSchema = new mongoose.Schema({
         type: Number,
         default: 0,
     },
+    age: {
+        type: Number,
+        default: 25,
+    },
+    gender: {
+        type: String,
+        default: 'Male',
+    },
+    insuranceProvider: {
+        type: String,
+        default: 'Allianz Insurance',
+    },
+    insurancePolicy: {
+        type: String,
+        default: 'POL-991823A',
+    },
+    notificationsEnabled: {
+        type: Boolean,
+        default: true,
+    },
+    notificationOffset: {
+        type: Number,
+        default: 2,
+    },
 }, {
     timestamps: true,
 });
