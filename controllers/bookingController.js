@@ -3,6 +3,54 @@ const Clinic = require('../models/Clinic');
 const User = require('../models/User');
 const SessionHistory = require('../models/SessionHistory');
 
+const parseTimeStrToday = (timeStr) => {
+    try {
+        const [timePart, ampm] = timeStr.split(' ');
+        const [hoursStr, minutesStr] = timePart.split(':');
+        let hour = parseInt(hoursStr);
+        const min = parseInt(minutesStr);
+        
+        if (ampm === 'PM' && hour < 12) hour += 12;
+        if (ampm === 'AM' && hour === 12) hour = 0;
+        
+        const d = new Date();
+        d.setHours(hour, min, 0, 0);
+        return d;
+    } catch (e) {
+        const d = new Date();
+        d.setHours(9, 0, 0, 0);
+        return d;
+    }
+};
+
+const formatTimeStr = (date) => {
+    let hour = date.getHours();
+    const min = date.getMinutes();
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    
+    if (hour > 12) hour -= 12;
+    if (hour === 0) hour = 12;
+    
+    const minStr = min.toString().padStart(2, '0');
+    return `${hour}:${minStr} ${ampm}`;
+};
+
+const getEffectiveStartTime = (scheduledStartStr, actualStartStr) => {
+    if (actualStartStr && actualStartStr !== '--:--') {
+        return actualStartStr;
+    }
+    
+    const baseScheduled = scheduledStartStr || '9:00 AM';
+    const scheduledTime = parseTimeStrToday(baseScheduled);
+    const now = new Date();
+    
+    if (now > scheduledTime) {
+        return formatTimeStr(now);
+    }
+    
+    return baseScheduled;
+};
+
 // Helper to format float representations matching React Native constants
 const getSlotTimeStr = (slotNum, averageConsultTime = 6.4, actualStartStr = '9:18 AM') => {
     const [timePart, ampm] = actualStartStr.split(' ');
@@ -109,9 +157,7 @@ const getActiveBooking = async (req, res) => {
         const averageConsultTime = dynamicAvg || booking.clinic.averageConsultTime || 6.4;
 
         const wait = getWaitMinutes(booking.slotNumber, currentServingNum, averageConsultTime);
-        const startTimeStr = (booking.clinic.actualStart && booking.clinic.actualStart !== '--:--') 
-            ? booking.clinic.actualStart 
-            : (booking.clinic.scheduledStart || '9:00 AM');
+        const startTimeStr = getEffectiveStartTime(booking.clinic.scheduledStart, booking.clinic.actualStart);
         const predicted = getSlotTimeStr(booking.slotNumber, averageConsultTime, startTimeStr);
 
         res.status(200).json({
@@ -162,9 +208,7 @@ const getSlotsForClinic = async (req, res) => {
         // Generate dynamic slots based on maxPatients
         const slots = [];
         const maxSlots = clinic.maxPatients || 14;
-        const startTimeStr = (clinic.actualStart && clinic.actualStart !== '--:--')
-            ? clinic.actualStart
-            : (clinic.scheduledStart || '9:00 AM');
+        const startTimeStr = getEffectiveStartTime(clinic.scheduledStart, clinic.actualStart);
         const dynamicAvg = await getDynamicAverageConsultTime(clinic._id);
         const averageConsultTime = dynamicAvg || clinic.averageConsultTime || 6.4;
 
@@ -243,9 +287,7 @@ const reserveSlot = async (req, res) => {
         const averageConsultTime = dynamicAvg || clinic.averageConsultTime || 6.4;
 
         const wait = getWaitMinutes(slotNumber, currentServingNum, averageConsultTime);
-        const startTimeStr = (clinic.actualStart && clinic.actualStart !== '--:--')
-            ? clinic.actualStart
-            : (clinic.scheduledStart || '9:00 AM');
+        const startTimeStr = getEffectiveStartTime(clinic.scheduledStart, clinic.actualStart);
         const predicted = getSlotTimeStr(slotNumber, averageConsultTime, startTimeStr);
 
         // Create booking
@@ -338,9 +380,7 @@ const getMyBookings = async (req, res) => {
             const averageConsultTime = dynamicAvg || booking.clinic.averageConsultTime || 6.4;
 
             const wait = getWaitMinutes(booking.slotNumber, currentServingNum, averageConsultTime);
-            const startTimeStr = (booking.clinic.actualStart && booking.clinic.actualStart !== '--:--') 
-                ? booking.clinic.actualStart 
-                : (booking.clinic.scheduledStart || '9:00 AM');
+            const startTimeStr = getEffectiveStartTime(booking.clinic.scheduledStart, booking.clinic.actualStart);
             const predicted = getSlotTimeStr(booking.slotNumber, averageConsultTime, startTimeStr);
 
             return {
