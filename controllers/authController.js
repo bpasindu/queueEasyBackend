@@ -128,8 +128,45 @@ const getMe = async (req, res) => {
     }
 };
 
+// @desc    Update user profile data
+// @route   PUT /api/auth/profile
+// @access  Private
+const updateProfile = async (req, res) => {
+    try {
+        const fieldsToUpdate = {
+            name: req.body.name,
+            email: req.body.email,
+            phone: req.body.phone,
+            age: req.body.age,
+            gender: req.body.gender,
+            insuranceProvider: req.body.insuranceProvider,
+            insurancePolicy: req.body.insurancePolicy,
+            notificationsEnabled: req.body.notificationsEnabled,
+            notificationOffset: req.body.notificationOffset,
+        };
+
+        // Remove undefined fields
+        Object.keys(fieldsToUpdate).forEach(
+            (key) => fieldsToUpdate[key] === undefined && delete fieldsToUpdate[key]
+        );
+
+        const user = await User.findByIdAndUpdate(req.user.id, fieldsToUpdate, {
+            new: true,
+            runValidators: true,
+        });
+
+        res.status(200).json({
+            success: true,
+            user,
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     registerUser,
     loginUser,
     getMe,
+    updateProfile,
 };
