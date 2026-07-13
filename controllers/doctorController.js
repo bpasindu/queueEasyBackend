@@ -1,5 +1,6 @@
 const Clinic = require('../models/Clinic');
 const Booking = require('../models/Booking');
+const SessionHistory = require('../models/SessionHistory');
 
 // Helper to get formatted current time, e.g. "9:18 AM"
 const getCurrentTimeString = () => {
@@ -97,10 +98,31 @@ const callNextPatient = async (req, res) => {
         }
 
         // 1. If there's an active called booking for the old serving number, complete it
-        await Booking.updateMany(
-            { clinic: clinic._id, slotNumber: clinic.currentServing, status: 'called' },
-            { $set: { status: 'completed', isLive: false } }
-        );
+        const currentActive = await Booking.findOne({
+            clinic: clinic._id,
+            slotNumber: clinic.currentServing,
+            status: 'called',
+        });
+        if (currentActive) {
+            currentActive.status = 'completed';
+            currentActive.isLive = false;
+            await currentActive.save();
+
+            // Calculate actual consultation duration in minutes
+            const durationMs = Date.now() - new Date(currentActive.updatedAt).getTime();
+            const durationMin = Math.max(1, durationMs / 60000); // minimum 1 minute
+
+            // Create SessionHistory entry
+            const dayOfWeek = new Date().getDay();
+            const hourOfDay = new Date().getHours();
+            await SessionHistory.create({
+                clinic: clinic._id,
+                dayOfWeek,
+                hourOfDay,
+                slotNumber: clinic.currentServing,
+                consultationDuration: durationMin,
+            });
+        }
 
         // 2. Increment now serving number
         clinic.currentServing = clinic.currentServing + 1;

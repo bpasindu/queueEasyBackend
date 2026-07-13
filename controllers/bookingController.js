@@ -1,6 +1,7 @@
 const Booking = require('../models/Booking');
 const Clinic = require('../models/Clinic');
 const User = require('../models/User');
+const SessionHistory = require('../models/SessionHistory');
 
 // Helper to format float representations matching React Native constants
 const getSlotTimeStr = (slotNum, averageConsultTime = 6.4, actualStartStr = '9:18 AM') => {
@@ -10,9 +11,9 @@ const getSlotTimeStr = (slotNum, averageConsultTime = 6.4, actualStartStr = '9:1
     const startMin = parseInt(minutesStr);
     
     const elapsed = (slotNum - 1) * averageConsultTime;
-    const totalMin = startMin + elapsed;
-    let hour = startHour + Math.floor(totalMin / 60);
-    let min = totalMin % 60;
+    const roundedTotalMin = Math.round(startMin + elapsed);
+    let hour = startHour + Math.floor(roundedTotalMin / 60);
+    let min = roundedTotalMin % 60;
     
     let displayAmpm = ampm;
     if (hour >= 12) {
@@ -25,8 +26,7 @@ const getSlotTimeStr = (slotNum, averageConsultTime = 6.4, actualStartStr = '9:1
         }
     }
     
-    // JS float addition can result in values like 24.400000000000003
-    const minStr = Number.isInteger(min) ? min.toString() : min.toString();
+    const minStr = min.toString().padStart(2, '0');
     return `${hour}:${minStr} ${displayAmpm}`;
 };
 
@@ -36,6 +36,33 @@ const getWaitMinutes = (slotNum, currentServingNum, averageConsultTime = 6.4) =>
     const currentOffset = (currentServingNum - 1) * averageConsultTime;
     const wait = baseOffset - currentOffset;
     return Math.max(1, Math.round(wait));
+};
+
+const getDynamicAverageConsultTime = async (clinicId) => {
+    try {
+        const dayOfWeek = new Date().getDay();
+        
+        // Find historical logs for this clinic on the same day of the week
+        const logs = await SessionHistory.find({
+            clinic: clinicId,
+            dayOfWeek: dayOfWeek
+        });
+
+        if (logs.length >= 3) {
+            const sum = logs.reduce((total, log) => total + log.consultationDuration, 0);
+            return sum / logs.length;
+        }
+
+        // Fallback: Check overall average consult times for this clinic across all days
+        const allLogs = await SessionHistory.find({ clinic: clinicId });
+        if (allLogs.length >= 3) {
+            const sum = allLogs.reduce((total, log) => total + log.consultationDuration, 0);
+            return sum / allLogs.length;
+        }
+    } catch (err) {
+        console.error('Error calculating dynamic average consult time:', err);
+    }
+    return null;
 };
 
 // @desc    Get active booking for the logged-in patient
@@ -78,11 +105,14 @@ const getActiveBooking = async (req, res) => {
             }
         }
 
-        const wait = getWaitMinutes(booking.slotNumber, currentServingNum, booking.clinic.averageConsultTime);
+        const dynamicAvg = await getDynamicAverageConsultTime(booking.clinic._id);
+        const averageConsultTime = dynamicAvg || booking.clinic.averageConsultTime || 6.4;
+
+        const wait = getWaitMinutes(booking.slotNumber, currentServingNum, averageConsultTime);
         const startTimeStr = (booking.clinic.actualStart && booking.clinic.actualStart !== '--:--') 
             ? booking.clinic.actualStart 
             : (booking.clinic.scheduledStart || '9:00 AM');
-        const predicted = getSlotTimeStr(booking.slotNumber, booking.clinic.averageConsultTime, startTimeStr);
+        const predicted = getSlotTimeStr(booking.slotNumber, averageConsultTime, startTimeStr);
 
         res.status(200).json({
             success: true,
@@ -135,10 +165,13 @@ const getSlotsForClinic = async (req, res) => {
         const startTimeStr = (clinic.actualStart && clinic.actualStart !== '--:--')
             ? clinic.actualStart
             : (clinic.scheduledStart || '9:00 AM');
+        const dynamicAvg = await getDynamicAverageConsultTime(clinic._id);
+        const averageConsultTime = dynamicAvg || clinic.averageConsultTime || 6.4;
+
         for (let i = 1; i <= maxSlots; i++) {
             const isTaken = !!takenSlotsMap[i] || i < currentServingNum; // slots below current serving are taken
-            const time = getSlotTimeStr(i, clinic.averageConsultTime, startTimeStr);
-            const wait = getWaitMinutes(i, currentServingNum, clinic.averageConsultTime);
+            const time = getSlotTimeStr(i, averageConsultTime, startTimeStr);
+            const wait = getWaitMinutes(i, currentServingNum, averageConsultTime);
 
             slots.push({
                 number: i,
@@ -156,7 +189,7 @@ const getSlotsForClinic = async (req, res) => {
                 currentServing: currentServingNum,
                 scheduledStart: clinic.scheduledStart,
                 actualStart: clinic.actualStart,
-                averageConsultTime: clinic.averageConsultTime,
+                averageConsultTime: averageConsultTime,
             },
             slots: slots,
         });
@@ -206,11 +239,14 @@ const reserveSlot = async (req, res) => {
 
         const currentServingNum = lastCalled ? lastCalled.slotNumber : 1;
 
-        const wait = getWaitMinutes(slotNumber, currentServingNum, clinic.averageConsultTime);
+        const dynamicAvg = await getDynamicAverageConsultTime(clinicId);
+        const averageConsultTime = dynamicAvg || clinic.averageConsultTime || 6.4;
+
+        const wait = getWaitMinutes(slotNumber, currentServingNum, averageConsultTime);
         const startTimeStr = (clinic.actualStart && clinic.actualStart !== '--:--')
             ? clinic.actualStart
             : (clinic.scheduledStart || '9:00 AM');
-        const predicted = getSlotTimeStr(slotNumber, clinic.averageConsultTime, startTimeStr);
+        const predicted = getSlotTimeStr(slotNumber, averageConsultTime, startTimeStr);
 
         // Create booking
         const booking = await Booking.create({
@@ -234,7 +270,7 @@ const reserveSlot = async (req, res) => {
         });
 
         clinic.inQueue = activeBookingsCount;
-        clinic.eta = Math.max(1, Math.round(activeBookingsCount * clinic.averageConsultTime));
+        clinic.eta = Math.max(1, Math.round(activeBookingsCount * averageConsultTime));
         await clinic.save();
 
         res.status(201).json({
@@ -254,10 +290,88 @@ const reserveSlot = async (req, res) => {
     }
 };
 
+// @desc    Get all bookings for the logged-in patient (active & history)
+// @route   GET /api/bookings/my-bookings
+// @access  Private
+const getMyBookings = async (req, res) => {
+    try {
+        const bookings = await Booking.find({ patient: req.user.id })
+            .populate('clinic')
+            .sort({ createdAt: -1 });
+
+        const data = await Promise.all(bookings.map(async (booking) => {
+            if (!booking.clinic) {
+                return {
+                    _id: booking._id,
+                    number: booking.slotNumber,
+                    wait: 0,
+                    predicted: '--:--',
+                    started: '--:--',
+                    live: false,
+                    clinic: null,
+                    status: booking.status,
+                    createdAt: booking.createdAt,
+                    updatedAt: booking.updatedAt,
+                };
+            }
+
+            // Get current serving number for this clinic
+            const activeBookings = await Booking.find({
+                clinic: booking.clinic._id,
+                status: 'called',
+            }).sort({ slotNumber: -1 });
+
+            let currentServingNum = 1;
+            if (activeBookings.length > 0) {
+                currentServingNum = activeBookings[0].slotNumber;
+            } else {
+                const firstPending = await Booking.findOne({
+                    clinic: booking.clinic._id,
+                    status: 'pending',
+                }).sort({ slotNumber: 1 });
+                if (firstPending && firstPending.slotNumber > 1) {
+                    currentServingNum = firstPending.slotNumber - 1;
+                }
+            }
+
+            const dynamicAvg = await getDynamicAverageConsultTime(booking.clinic._id);
+            const averageConsultTime = dynamicAvg || booking.clinic.averageConsultTime || 6.4;
+
+            const wait = getWaitMinutes(booking.slotNumber, currentServingNum, averageConsultTime);
+            const startTimeStr = (booking.clinic.actualStart && booking.clinic.actualStart !== '--:--') 
+                ? booking.clinic.actualStart 
+                : (booking.clinic.scheduledStart || '9:00 AM');
+            const predicted = getSlotTimeStr(booking.slotNumber, averageConsultTime, startTimeStr);
+
+            return {
+                _id: booking._id,
+                number: booking.slotNumber,
+                wait: wait,
+                predicted: predicted,
+                started: booking.clinic.actualStart,
+                live: booking.isLive,
+                clinic: booking.clinic,
+                status: booking.status,
+                createdAt: booking.createdAt,
+                updatedAt: booking.updatedAt,
+            };
+        }));
+
+        res.status(200).json({
+            success: true,
+            count: bookings.length,
+            data
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 module.exports = {
     getActiveBooking,
     getSlotsForClinic,
     reserveSlot,
+    getMyBookings,
     getSlotTimeStr,
     getWaitMinutes,
 };
