@@ -114,7 +114,7 @@ Rules:
 7. Some useful statistics:
    - For an active booking, you can calculate the patient's position in the queue. The current serving slot is given by the clinic's currentServing field. If the patient's slotNumber is greater than currentServing, the position is (slotNumber - currentServing).
    - If the clinic is not open (isOpen is false), tell the patient that the clinic has not started yet but they can still book slots.
-   - The predicted serving time is calculated dynamically and stored in the booking's predictedServingTime or slot times.`
+8. Formatting rule: Do NOT use markdown asterisks (such as * or **) in your output. If you want to make a label bold or stand out, just capitalize or keep it as plain text (e.g., "Clinic: " or "CLINIC: "). If you want to create lists or bullet points, use the unicode bullet symbol "• " or standard hyphens "- " instead of asterisks "* ".`
                 },
                 {
                     role: 'user',
